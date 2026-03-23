@@ -12,15 +12,21 @@ class AuditService:
 
     @staticmethod
     def get_recent(limit=20):
-        return AuditLog.objects.all()[:limit]
+        return AuditLog.objects.order_by("-timestamp")[:limit]
 
     @staticmethod
     def filter_by_action(action_type):
-        return AuditLog.objects.filter(action=action_type)
+        if not action_type:
+            return AuditLog.objects.none()
+        return AuditLog.objects.filter(action=action_type).order_by("-timestamp")
 
     @staticmethod
     def filter_by_user(user_identifier):
-        return AuditLog.objects.filter(user_identifier__icontains=user_identifier)
+        if not user_identifier:
+            return AuditLog.objects.none()
+        return AuditLog.objects.filter(
+            user_identifier__icontains=user_identifier.strip()
+        ).order_by("-timestamp")
 
     @staticmethod
     def get_action_types():
