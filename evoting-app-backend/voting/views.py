@@ -49,21 +49,27 @@ class OpenPollsView(APIView):
                     }
                     for c in pp.candidates.all()
                 ]
-                positions.append({
-                    "poll_position_id": pp.id,
-                    "position_title": pp.position.title,
-                    "max_winners": pp.position.max_winners,
-                    "candidates": candidates,
-                })
-            data.append({
-                "id": poll.id,
-                "title": poll.title,
-                "election_type": poll.election_type,
-                "start_date": str(poll.start_date),
-                "end_date": str(poll.end_date),
-                "has_voted": poll.id in voted_poll_ids,
-                "positions": positions,
-            })
+
+                positions.append(
+                    {
+                        "poll_position_id": pp.id,
+                        "position_title": pp.position.title,
+                        "max_winners": pp.position.max_winners,
+                        "candidates": candidates,
+                    }
+                )
+
+            data.append(
+                {
+                    "id": poll.id,
+                    "title": poll.title,
+                    "election_type": poll.election_type,
+                    "start_date": str(poll.start_date),
+                    "end_date": str(poll.end_date),
+                    "has_voted": poll.id in voted_poll_ids,
+                    "positions": positions,
+                }
+            )
 
         return Response(data)
 
@@ -73,20 +79,24 @@ class CastVoteView(APIView):
     serializer_class = CastVoteSerializer
 
     def post(self, request):
-        serializer = CastVoteSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         service = VoteCastingService()
         try:
             votes = service.cast(request.user, serializer.validated_data)
-        except (ValueError, Poll.DoesNotExist) as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Poll.DoesNotExist:
+            return Response({"detail": "Poll not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         vote_hash = votes[0].vote_hash if votes else ""
-        return Response({
-            "detail": "Your vote has been recorded successfully.",
-            "vote_reference": vote_hash,
-        })
+        return Response(
+            {
+                "detail": "Your vote has been recorded successfully.",
+                "vote_reference": vote_hash,
+            }
+        )
 
 
 class VotingHistoryView(APIView):
@@ -123,14 +133,16 @@ class StationResultsView(APIView):
 
 
 class ClosedPollResultsView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [AllowAny]  # Change if results should not be public
 
     def get(self, request):
         closed_polls = Poll.objects.filter(status=Poll.Status.CLOSED)
         service = ResultsService()
+
         results = []
         for poll in closed_polls:
             results.append(service.get_poll_results(poll.id))
+
         return Response(results)
 
 
@@ -139,10 +151,12 @@ class SystemStatisticsView(APIView):
 
     def get(self, request):
         service = StatisticsService()
-        return Response({
-            "overview": service.get_system_overview(),
-            "demographics": service.get_voter_demographics(),
-            "station_load": service.get_station_load(),
-            "party_distribution": service.get_party_distribution(),
-            "education_distribution": service.get_education_distribution(),
-        })
+        return Response(
+            {
+                "overview": service.get_system_overview(),
+                "demographics": service.get_voter_demographics(),
+                "station_load": service.get_station_load(),
+                "party_distribution": service.get_party_distribution(),
+                "education_distribution": service.get_education_distribution(),
+            }
+        )

@@ -6,17 +6,37 @@ class CastVoteItemSerializer(serializers.Serializer):
     candidate_id = serializers.IntegerField(required=False, allow_null=True, default=None)
     abstain = serializers.BooleanField(default=False)
 
+    def validate(self, data):
+        candidate_id = data.get("candidate_id")
+        abstain = data.get("abstain", False)
+
+        if abstain and candidate_id is not None:
+            raise serializers.ValidationError(
+                "Cannot both abstain and select a candidate."
+            )
+
+        if not abstain and candidate_id is None:
+            raise serializers.ValidationError(
+                "You must either select a candidate or abstain."
+            )
+
+        return data
+
 
 class CastVoteSerializer(serializers.Serializer):
     poll_id = serializers.IntegerField()
     votes = CastVoteItemSerializer(many=True)
 
     def validate_votes(self, value):
-        for item in value:
-            if item.get("abstain") and item.get("candidate_id"):
-                raise serializers.ValidationError(
-                    "Cannot both abstain and select a candidate."
-                )
+        if not value:
+            raise serializers.ValidationError("At least one vote item is required.")
+
+        poll_position_ids = [item["poll_position_id"] for item in value]
+        if len(poll_position_ids) != len(set(poll_position_ids)):
+            raise serializers.ValidationError(
+                "Duplicate poll position IDs are not allowed."
+            )
+
         return value
 
 
