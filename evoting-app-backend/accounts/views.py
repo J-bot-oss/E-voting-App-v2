@@ -11,7 +11,6 @@ from accounts.serializers import (
     AdminListSerializer,
     AdminLoginSerializer,
     ChangePasswordSerializer,
-    UserSerializer,
     VoterListSerializer,
     VoterLoginSerializer,
     VoterProfileSerializer,
@@ -32,7 +31,7 @@ class AdminLoginView(APIView):
     serializer_class = AdminLoginSerializer
 
     def post(self, request):
-        serializer = AdminLoginSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         service = AuthenticationService()
@@ -45,16 +44,18 @@ class AdminLoginView(APIView):
             return Response({"detail": error}, status=status.HTTP_401_UNAUTHORIZED)
 
         refresh = RefreshToken.for_user(user)
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "full_name": user.get_full_name(),
-                "role": user.role,
-            },
-        })
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "full_name": user.get_full_name().strip(),
+                    "role": user.role,
+                },
+            }
+        )
 
 
 class VoterLoginView(APIView):
@@ -62,7 +63,7 @@ class VoterLoginView(APIView):
     serializer_class = VoterLoginSerializer
 
     def post(self, request):
-        serializer = VoterLoginSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         service = AuthenticationService()
@@ -75,16 +76,18 @@ class VoterLoginView(APIView):
             return Response({"detail": error}, status=status.HTTP_401_UNAUTHORIZED)
 
         refresh = RefreshToken.for_user(user)
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": {
-                "id": user.id,
-                "full_name": user.get_full_name(),
-                "voter_card_number": user.voter_profile.voter_card_number,
-                "role": user.role,
-            },
-        })
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "full_name": user.get_full_name().strip(),
+                    "voter_card_number": user.voter_profile.voter_card_number,
+                    "role": user.role,
+                },
+            }
+        )
 
 
 class VoterRegistrationView(APIView):
@@ -92,7 +95,7 @@ class VoterRegistrationView(APIView):
     serializer_class = VoterRegistrationSerializer
 
     def post(self, request):
-        serializer = VoterRegistrationSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         service = VoterRegistrationService()
@@ -111,6 +114,12 @@ class VoterProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not hasattr(request.user, "voter_profile"):
+            return Response(
+                {"detail": "Voter profile not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         serializer = VoterProfileSerializer(request.user.voter_profile)
         return Response(serializer.data)
 
@@ -120,7 +129,7 @@ class ChangePasswordView(APIView):
     serializer_class = ChangePasswordSerializer
 
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         if not request.user.check_password(serializer.validated_data["current_password"]):
@@ -130,7 +139,7 @@ class ChangePasswordView(APIView):
             )
 
         request.user.set_password(serializer.validated_data["new_password"])
-        request.user.save()
+        request.user.save(update_fields=["password"])
 
         return Response({"detail": "Password changed successfully."})
 
@@ -149,7 +158,11 @@ class VoterVerifyView(APIView):
 
     def post(self, request, pk):
         service = VoterManagementService()
-        service.verify(pk, request.user)
+        try:
+            service.verify(pk, request.user)
+        except User.DoesNotExist:
+            return Response({"detail": "Voter not found."}, status=status.HTTP_404_NOT_FOUND)
+
         return Response({"detail": "Voter verified successfully."})
 
 
@@ -171,6 +184,7 @@ class VoterDeactivateView(APIView):
             service.deactivate(pk, request.user)
         except User.DoesNotExist:
             return Response({"detail": "Voter not found."}, status=status.HTTP_404_NOT_FOUND)
+
         return Response({"detail": "Voter deactivated."})
 
 
@@ -187,7 +201,7 @@ class AdminCreateView(APIView):
     serializer_class = AdminCreateSerializer
 
     def post(self, request):
-        serializer = AdminCreateSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         service = AdminManagementService()
@@ -211,6 +225,13 @@ class AdminDeactivateView(APIView):
                 {"detail": "Cannot deactivate your own account."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         service = AdminManagementService()
-        service.deactivate(pk, request.user)
+        try:
+            service.deactivate(pk, request.user)
+        except User.DoesNotExist:
+            return Response({"detail": "Admin not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response({"detail": "Admin deactivated."})
