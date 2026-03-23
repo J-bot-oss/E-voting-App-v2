@@ -21,6 +21,7 @@ class CandidateService:
         for key, value in validated_data.items():
             setattr(candidate, key, value)
         candidate.save()
+
         self._audit.log(
             "UPDATE_CANDIDATE",
             updated_by.username,
@@ -28,32 +29,39 @@ class CandidateService:
         )
         return candidate
 
-    def deactivate(self, candidate_id, deleted_by):
+    def deactivate(self, candidate_id, deactivated_by):
         candidate = Candidate.objects.get(pk=candidate_id)
         candidate.is_active = False
         candidate.save(update_fields=["is_active"])
+
         self._audit.log(
-            "DELETE_CANDIDATE",
-            deleted_by.username,
+            "DEACTIVATE_CANDIDATE",
+            deactivated_by.username,
             f"Deactivated candidate: {candidate.full_name} (ID: {candidate.id})",
         )
         return candidate
 
     def search(self, query_params):
         qs = Candidate.objects.all()
+
         if name := query_params.get("name"):
-            qs = qs.filter(full_name__icontains=name)
+            qs = qs.filter(full_name__icontains=name.strip())
+
         if party := query_params.get("party"):
-            qs = qs.filter(party__icontains=party)
+            qs = qs.filter(party__icontains=party.strip())
+
         if education := query_params.get("education"):
             qs = qs.filter(education=education)
+
+        candidates = list(qs)
+
         if min_age := query_params.get("min_age"):
-            qs = [c for c in qs if c.age >= int(min_age)]
-            return qs
+            candidates = [c for c in candidates if c.age >= int(min_age)]
+
         if max_age := query_params.get("max_age"):
-            qs = [c for c in qs if c.age <= int(max_age)]
-            return qs
-        return qs
+            candidates = [c for c in candidates if c.age <= int(max_age)]
+
+        return candidates
 
 
 class VotingStationService:
@@ -73,6 +81,7 @@ class VotingStationService:
         for key, value in validated_data.items():
             setattr(station, key, value)
         station.save()
+
         self._audit.log(
             "UPDATE_STATION",
             updated_by.username,
@@ -80,13 +89,14 @@ class VotingStationService:
         )
         return station
 
-    def deactivate(self, station_id, deleted_by):
+    def deactivate(self, station_id, deactivated_by):
         station = VotingStation.objects.get(pk=station_id)
         station.is_active = False
         station.save(update_fields=["is_active"])
+
         self._audit.log(
-            "DELETE_STATION",
-            deleted_by.username,
+            "DEACTIVATE_STATION",
+            deactivated_by.username,
             f"Deactivated station: {station.name} (ID: {station.id})",
         )
         return station
@@ -109,6 +119,7 @@ class PositionService:
         for key, value in validated_data.items():
             setattr(position, key, value)
         position.save()
+
         self._audit.log(
             "UPDATE_POSITION",
             updated_by.username,
@@ -116,13 +127,14 @@ class PositionService:
         )
         return position
 
-    def deactivate(self, position_id, deleted_by):
+    def deactivate(self, position_id, deactivated_by):
         position = Position.objects.get(pk=position_id)
         position.is_active = False
         position.save(update_fields=["is_active"])
+
         self._audit.log(
-            "DELETE_POSITION",
-            deleted_by.username,
+            "DEACTIVATE_POSITION",
+            deactivated_by.username,
             f"Deactivated position: {position.title} (ID: {position.id})",
         )
         return position
@@ -143,14 +155,17 @@ class PollService:
             status=Poll.Status.DRAFT,
             created_by=created_by,
         )
+
         poll.stations.set(
             VotingStation.objects.filter(pk__in=validated_data["station_ids"])
         )
+
         for pos_id in validated_data["position_ids"]:
             PollPosition.objects.create(
                 poll=poll,
                 position_id=pos_id,
             )
+
         self._audit.log(
             "CREATE_POLL",
             created_by.username,
@@ -161,9 +176,11 @@ class PollService:
     def update(self, poll, validated_data, updated_by):
         if poll.status == Poll.Status.OPEN:
             raise ValueError("Cannot update an open poll. Close it first.")
+
         for key, value in validated_data.items():
             setattr(poll, key, value)
         poll.save()
+
         self._audit.log(
             "UPDATE_POLL",
             updated_by.username,
@@ -174,10 +191,13 @@ class PollService:
     @transaction.atomic
     def delete(self, poll_id, deleted_by):
         poll = Poll.objects.get(pk=poll_id)
+
         if poll.status == Poll.Status.OPEN:
             raise ValueError("Cannot delete an open poll. Close it first.")
+
         title = poll.title
         poll.delete()
+
         self._audit.log(
             "DELETE_POLL",
             deleted_by.username,
@@ -186,27 +206,34 @@ class PollService:
 
     def toggle_status(self, poll_id, action, toggled_by):
         poll = Poll.objects.prefetch_related("poll_positions__candidates").get(pk=poll_id)
+        previous_status = poll.status
 
         if action == "open":
-            if poll.status not in (Poll.Status.DRAFT, Poll.Status.CLOSED):
-                raise ValueError(f"Cannot open a poll with status: {poll.status}")
-            if poll.status == Poll.Status.DRAFT:
-                has_candidates = any(
+            if previous_status not in (Poll.Status.DRAFT, Poll.Status.CLOSED):
+                raise ValueError(f"Cannot open a poll with status: {previous_status}")
+
+            if previous_status == Poll.Status.DRAFT:
+                all_positions_have_candidates = all(
                     pp.candidates.exists() for pp in poll.poll_positions.all()
                 )
-                if not has_candidates:
-                    raise ValueError("Cannot open - no candidates assigned.")
+                if not all_positions_have_candidates:
+                    raise ValueError("Cannot open poll until all positions have candidates assigned.")
+
             poll.status = Poll.Status.OPEN
-            log_action = "OPEN_POLL" if poll.status == Poll.Status.DRAFT else "REOPEN_POLL"
+            log_action = "OPEN_POLL" if previous_status == Poll.Status.DRAFT else "REOPEN_POLL"
+
         elif action == "close":
-            if poll.status != Poll.Status.OPEN:
+            if previous_status != Poll.Status.OPEN:
                 raise ValueError("Only open polls can be closed.")
+
             poll.status = Poll.Status.CLOSED
             log_action = "CLOSE_POLL"
+
         else:
             raise ValueError(f"Invalid action: {action}")
 
         poll.save(update_fields=["status"])
+
         self._audit.log(
             log_action,
             toggled_by.username,
@@ -218,6 +245,7 @@ class PollService:
         poll_position = PollPosition.objects.select_related("poll", "position").get(
             pk=poll_position_id
         )
+
         if poll_position.poll.status == Poll.Status.OPEN:
             raise ValueError("Cannot modify candidates of an open poll.")
 
@@ -226,6 +254,10 @@ class PollService:
             is_active=True,
             is_approved=True,
         )
+
+        if eligible.count() != len(set(candidate_ids)):
+            raise ValueError("Some candidates are invalid, inactive, or not approved.")
+
         poll_position.candidates.set(eligible)
 
         self._audit.log(

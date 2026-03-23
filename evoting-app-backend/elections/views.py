@@ -1,10 +1,9 @@
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminOrReadOnlyVoter, IsAdminUser
-from elections.models import Candidate, Poll, Position, VotingStation
+from elections.models import Candidate, Poll, PollPosition, Position, VotingStation
 from elections.serializers import (
     AssignCandidatesSerializer,
     CandidateCreateSerializer,
@@ -66,8 +65,8 @@ class CandidateDeactivateView(APIView):
             service.deactivate(pk, request.user)
         except Candidate.DoesNotExist:
             return Response({"detail": "Candidate not found."}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"detail": "Candidate deactivated."})
 
 
@@ -88,7 +87,11 @@ class VotingStationListCreateView(generics.ListCreateAPIView):
 class VotingStationDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAdminOrReadOnlyVoter]
     queryset = VotingStation.objects.all()
-    serializer_class = VotingStationSerializer
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return VotingStationCreateSerializer
+        return VotingStationSerializer
 
     def perform_update(self, serializer):
         service = VotingStationService()
@@ -104,6 +107,8 @@ class VotingStationDeactivateView(APIView):
             service.deactivate(pk, request.user)
         except VotingStation.DoesNotExist:
             return Response({"detail": "Station not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"detail": "Station deactivated."})
 
 
@@ -144,25 +149,28 @@ class PositionDeactivateView(APIView):
             service.deactivate(pk, request.user)
         except Position.DoesNotExist:
             return Response({"detail": "Position not found."}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"detail": "Position deactivated."})
 
 
 class PollListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdminOrReadOnlyVoter]
     queryset = Poll.objects.all()
-    serializer_class = PollSerializer
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return PollCreateSerializer
+        return PollSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = PollCreateSerializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         service = PollService()
         poll = service.create(serializer.validated_data, request.user)
-        return Response(
-            PollSerializer(poll).data,
-            status=status.HTTP_201_CREATED,
-        )
+
+        return Response(PollSerializer(poll).data, status=status.HTTP_201_CREATED)
 
 
 class PollDetailView(generics.RetrieveAPIView):
@@ -190,8 +198,9 @@ class PollUpdateView(APIView):
         service = PollService()
         try:
             service.update(poll, serializer.validated_data, request.user)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(PollSerializer(poll).data)
 
 
@@ -204,8 +213,9 @@ class PollDeleteView(APIView):
             service.delete(pk, request.user)
         except Poll.DoesNotExist:
             return Response({"detail": "Poll not found."}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -219,13 +229,15 @@ class PollToggleStatusView(APIView):
                 {"detail": "Action must be 'open' or 'close'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         service = PollService()
         try:
             poll = service.toggle_status(pk, action, request.user)
         except Poll.DoesNotExist:
             return Response({"detail": "Poll not found."}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(PollSerializer(poll).data)
 
 
@@ -234,8 +246,9 @@ class AssignCandidatesView(APIView):
     serializer_class = AssignCandidatesSerializer
 
     def post(self, request):
-        serializer = AssignCandidatesSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         service = PollService()
         try:
             poll_position = service.assign_candidates(
@@ -243,9 +256,14 @@ class AssignCandidatesView(APIView):
                 serializer.validated_data["candidate_ids"],
                 request.user,
             )
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({
-            "detail": f"Candidates assigned to {poll_position.position.title}.",
-            "candidate_count": poll_position.candidates.count(),
-        })
+        except PollPosition.DoesNotExist:
+            return Response({"detail": "Poll position not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "detail": f"Candidates assigned to {poll_position.position.title}.",
+                "candidate_count": poll_position.candidates.count(),
+            }
+        )

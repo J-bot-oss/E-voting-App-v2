@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from django.conf import settings
 from rest_framework import serializers
@@ -13,9 +13,19 @@ class VotingStationSerializer(serializers.ModelSerializer):
     class Meta:
         model = VotingStation
         fields = [
-            "id", "name", "location", "region", "capacity", "supervisor",
-            "contact", "opening_time", "closing_time", "is_active",
-            "registered_voter_count", "load_percentage", "created_at",
+            "id",
+            "name",
+            "location",
+            "region",
+            "capacity",
+            "supervisor",
+            "contact",
+            "opening_time",
+            "closing_time",
+            "is_active",
+            "registered_voter_count",
+            "load_percentage",
+            "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 
@@ -24,12 +34,33 @@ class VotingStationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VotingStation
         fields = [
-            "name", "location", "region", "capacity", "supervisor",
-            "contact", "opening_time", "closing_time",
+            "name",
+            "location",
+            "region",
+            "capacity",
+            "supervisor",
+            "contact",
+            "opening_time",
+            "closing_time",
         ]
 
+    def validate_name(self, value):
+        return value.strip()
+
+    def validate_location(self, value):
+        return value.strip()
+
+    def validate_region(self, value):
+        return value.strip()
+
+    def validate_supervisor(self, value):
+        return value.strip()
+
+    def validate_contact(self, value):
+        return value.strip()
+
     def validate_capacity(self, value):
-        if value < 0:
+        if value <= 0:
             raise serializers.ValidationError("Capacity must be positive.")
         return value
 
@@ -41,10 +72,24 @@ class CandidateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidate
         fields = [
-            "id", "full_name", "national_id", "date_of_birth", "age",
-            "gender", "education", "education_display", "party", "manifesto",
-            "address", "phone", "email", "has_criminal_record",
-            "years_experience", "is_active", "is_approved", "created_at",
+            "id",
+            "full_name",
+            "national_id",
+            "date_of_birth",
+            "age",
+            "gender",
+            "education",
+            "education_display",
+            "party",
+            "manifesto",
+            "address",
+            "phone",
+            "email",
+            "has_criminal_record",
+            "years_experience",
+            "is_active",
+            "is_approved",
+            "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 
@@ -53,19 +98,48 @@ class CandidateCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidate
         fields = [
-            "full_name", "national_id", "date_of_birth", "gender",
-            "education", "party", "manifesto", "address", "phone",
-            "email", "has_criminal_record", "years_experience",
+            "full_name",
+            "national_id",
+            "date_of_birth",
+            "gender",
+            "education",
+            "party",
+            "manifesto",
+            "address",
+            "phone",
+            "email",
+            "has_criminal_record",
+            "years_experience",
         ]
 
+    def validate_full_name(self, value):
+        return value.strip()
+
     def validate_national_id(self, value):
-        if Candidate.objects.filter(national_id=value).exists():
+        cleaned_value = value.strip()
+        if Candidate.objects.filter(national_id=cleaned_value).exists():
             raise serializers.ValidationError("A candidate with this National ID already exists.")
-        return value
+        return cleaned_value
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_phone(self, value):
+        return value.strip()
+
+    def validate_address(self, value):
+        return value.strip()
+
+    def validate_party(self, value):
+        return value.strip()
+
+    def validate_manifesto(self, value):
+        return value.strip()
 
     def validate_date_of_birth(self, value):
         today = date.today()
-        age = today.year - value.year
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+
         if age < settings.MIN_CANDIDATE_AGE:
             raise serializers.ValidationError(
                 f"Candidate must be at least {settings.MIN_CANDIDATE_AGE} years old."
@@ -88,9 +162,36 @@ class CandidateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidate
         fields = [
-            "full_name", "national_id", "party", "manifesto", "phone",
-            "email", "address", "years_experience",
+            "full_name",
+            "national_id",
+            "party",
+            "manifesto",
+            "phone",
+            "email",
+            "address",
+            "years_experience",
         ]
+
+    def validate_full_name(self, value):
+        return value.strip()
+
+    def validate_national_id(self, value):
+        return value.strip()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_phone(self, value):
+        return value.strip()
+
+    def validate_address(self, value):
+        return value.strip()
+
+    def validate_party(self, value):
+        return value.strip()
+
+    def validate_manifesto(self, value):
+        return value.strip()
 
 
 class PositionSerializer(serializers.ModelSerializer):
@@ -99,8 +200,15 @@ class PositionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Position
         fields = [
-            "id", "title", "description", "level", "level_display",
-            "max_winners", "min_candidate_age", "is_active", "created_at",
+            "id",
+            "title",
+            "description",
+            "level",
+            "level_display",
+            "max_winners",
+            "min_candidate_age",
+            "is_active",
+            "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 
@@ -110,13 +218,14 @@ class PositionCreateSerializer(serializers.ModelSerializer):
         model = Position
         fields = ["title", "description", "level", "max_winners", "min_candidate_age"]
 
-    def validate_level(self, value):
-        if value not in dict(Position.Level.choices):
-            raise serializers.ValidationError("Invalid level.")
-        return value
+    def validate_title(self, value):
+        return value.strip()
+
+    def validate_description(self, value):
+        return value.strip()
 
     def validate_max_winners(self, value):
-        if value < 0:
+        if value <= 0:
             raise serializers.ValidationError("Must be at least 1.")
         return value
 
@@ -134,15 +243,25 @@ class PollSerializer(serializers.ModelSerializer):
     poll_positions = PollPositionSerializer(many=True, read_only=True)
     total_votes_cast = serializers.ReadOnlyField()
     station_ids = serializers.PrimaryKeyRelatedField(
-        source="stations", many=True, read_only=True
+        source="stations",
+        many=True,
+        read_only=True,
     )
 
     class Meta:
         model = Poll
         fields = [
-            "id", "title", "description", "election_type", "start_date",
-            "end_date", "status", "station_ids", "poll_positions",
-            "total_votes_cast", "created_at",
+            "id",
+            "title",
+            "description",
+            "election_type",
+            "start_date",
+            "end_date",
+            "status",
+            "station_ids",
+            "poll_positions",
+            "total_votes_cast",
+            "created_at",
         ]
         read_only_fields = ["id", "status", "created_at"]
 
@@ -156,27 +275,52 @@ class PollCreateSerializer(serializers.Serializer):
     position_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
     station_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
+    def validate_title(self, value):
+        return value.strip()
+
+    def validate_description(self, value):
+        return value.strip()
+
+    def validate_position_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Duplicate position IDs are not allowed.")
+        return value
+
+    def validate_station_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Duplicate station IDs are not allowed.")
+        return value
+
     def validate(self, data):
         if data["end_date"] < data["start_date"]:
-            raise serializers.ValidationError({"end_date": "End date must be after start date."})
-        invalid_positions = set(data["position_ids"]) - set(
+            raise serializers.ValidationError(
+                {"end_date": "End date must be after start date."}
+            )
+
+        valid_positions = set(
             Position.objects.filter(
-                pk__in=data["position_ids"]
+                pk__in=data["position_ids"],
+                is_active=True,
             ).values_list("pk", flat=True)
         )
+        invalid_positions = sorted(set(data["position_ids"]) - valid_positions)
         if invalid_positions:
             raise serializers.ValidationError(
                 {"position_ids": f"Invalid or inactive positions: {invalid_positions}"}
             )
-        invalid_stations = set(data["station_ids"]) - set(
+
+        valid_stations = set(
             VotingStation.objects.filter(
-                pk__in=data["station_ids"], is_active=True
+                pk__in=data["station_ids"],
+                is_active=True,
             ).values_list("pk", flat=True)
         )
+        invalid_stations = sorted(set(data["station_ids"]) - valid_stations)
         if invalid_stations:
             raise serializers.ValidationError(
                 {"station_ids": f"Invalid or inactive stations: {invalid_stations}"}
             )
+
         return data
 
 
@@ -185,17 +329,46 @@ class PollUpdateSerializer(serializers.ModelSerializer):
         model = Poll
         fields = ["title", "description", "election_type", "start_date", "end_date"]
 
+    def validate_title(self, value):
+        return value.strip()
+
+    def validate_description(self, value):
+        return value.strip()
+
+    def validate(self, data):
+        start_date = data.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = data.get("end_date", getattr(self.instance, "end_date", None))
+
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": "End date must be after start date."}
+            )
+        return data
+
 
 class AssignCandidatesSerializer(serializers.Serializer):
     poll_position_id = serializers.IntegerField()
-    candidate_ids = serializers.ListField(child=serializers.IntegerField())
+    candidate_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+
+    def validate_poll_position_id(self, value):
+        if not PollPosition.objects.filter(pk=value).exists():
+            raise serializers.ValidationError("Invalid poll position.")
+        return value
 
     def validate_candidate_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Duplicate candidate IDs are not allowed.")
+
         existing = set(
-            Candidate.objects.filter(pk__in=value, is_active=True)
-            .values_list("pk", flat=True)
+            Candidate.objects.filter(
+                pk__in=value,
+                is_active=True,
+                is_approved=True,
+            ).values_list("pk", flat=True)
         )
-        invalid = set(value) - existing
+        invalid = sorted(set(value) - existing)
         if invalid:
-            raise serializers.ValidationError(f"Invalid or ineligible candidates: {invalid}")
+            raise serializers.ValidationError(
+                f"Invalid or ineligible candidates: {invalid}"
+            )
         return value
